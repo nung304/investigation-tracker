@@ -1,0 +1,159 @@
+// ระบบติดตามงานธุรการสอบสวน - Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CLERK // ธุรการ
+  SUPERVISOR // หัวหน้างาน
+  COMMANDER // ผู้บังคับบัญชา
+}
+
+enum Urgency {
+  NORMAL // ปกติ
+  URGENT // ด่วน
+  VERY_URGENT // ด่วนมาก
+}
+
+enum DocStatus {
+  PENDING // ยังไม่ดำเนินการ
+  IN_PROGRESS // กำลังดำเนินการ
+  NEED_INFO // รอข้อมูลเพิ่มเติม
+  WAIT_SIGNATURE // รอผู้บังคับบัญชาลงนาม
+  RETURNED // ส่งกลับแล้ว
+  COMPLETED // เสร็จสิ้น
+  CANCELLED // ยกเลิก
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  role         Role     @default(CLERK)
+  position     String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documentsCreated    Document[]      @relation("CreatedBy")
+  documentsAssigned   Document[]      @relation("AssignedTo")
+  statusHistories     StatusHistory[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@map("users")
+}
+
+model Agency {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  fromDocuments Document[] @relation("FromAgency")
+  toDocuments   Document[] @relation("ToAgency")
+
+  @@map("agencies")
+}
+
+model Document {
+  id              String    @id @default(cuid())
+  receiveNumber   String    @unique // เลขรับหนังสือ (auto)
+  receivedDate    DateTime // วันที่รับ
+  documentDate    DateTime // วันที่หนังสือ
+  documentNumber  String // เลขหนังสือ
+  title           String // ชื่อเรื่อง
+  description     String? // รายละเอียด
+  urgency         Urgency   @default(NORMAL)
+  status          DocStatus @default(PENDING)
+  dueDate         DateTime? // กำหนดส่ง
+  note            String?
+  completedAt     DateTime?
+
+  fromAgencyId String
+  fromAgency   Agency @relation("FromAgency", fields: [fromAgencyId], references: [id])
+  toAgencyId   String
+  toAgency     Agency @relation("ToAgency", fields: [toAgencyId], references: [id])
+
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attachments     Attachment[]
+  statusHistories StatusHistory[]
+  auditLogs       AuditLog[]
+
+  @@index([status])
+  @@index([urgency])
+  @@index([dueDate])
+  @@index([receivedDate])
+  @@map("documents")
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fileName   String
+  filePath   String
+  fileType   String
+  fileSize   Int
+  uploadedAt DateTime @default(now())
+
+  @@map("attachments")
+}
+
+model StatusHistory {
+  id         String    @id @default(cuid())
+  documentId String
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fromStatus DocStatus?
+  toStatus   DocStatus
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  ipAddress  String?
+  detail     String?
+  createdAt  DateTime  @default(now())
+
+  @@map("status_histories")
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id])
+  action     String // LOGIN, LOGOUT, CREATE, UPDATE, DELETE, DOWNLOAD, EXPORT, STATUS_CHANGE
+  detail     String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String // DUE_SOON, OVERDUE, NEW_DOC, ASSIGNED
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
